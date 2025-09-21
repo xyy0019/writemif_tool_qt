@@ -15,640 +15,267 @@
 #include <QComboBox>
 #include <QRegExpValidator>
 #include <QRegExp>
+#include <QDebug>
+#include <QTimer>
 #include <iostream>
 
-QString fileName;
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent)
-    , openFileButton(new QPushButton("Open File", this))
-    , saveImageButton(new QPushButton("Save as BMP", this))
-    , transferButton(new QPushButton("transfer", this))
-    , imageLabel(new QLabel(this))
-    , originalImage()
-    , filePathLineEdit(new QLineEdit(this))
-    , filePathQlabel(new QLabel("bin文件路径:", this))
-    , widthLineEdit(new QLineEdit(this))
-    , heightLineEdit(new QLineEdit(this))
-    , reverseCheckBox(new QCheckBox("Reverse", this))
-    , colorSpaceComboBox(new QComboBox(this))
-    , colorDepthComboBox(new QComboBox(this))
+    : QMainWindow(parent),
+    openFileButton(new QPushButton("打开文件", this)),
+    saveImageButton(new QPushButton("保存为BMP", this)),
+    transferButton(new QPushButton("转换", this)),
+    aboutButton(new QPushButton("关于", this)),
+    imageLabel(new QLabel(this)),
+    widthLineEdit(new QLineEdit(this)),
+    heightLineEdit(new QLineEdit(this)),
+    padLineEdit(new QLineEdit(this)),
+    colorSpaceComboBox(new QComboBox(this)),
+    colorDepthComboBox(new QComboBox(this)),
+    fileTypeComboBox(new QComboBox(this)),
+    originalSecondRowWidget(new QWidget(this)),
+    reverseCheckBox(new QCheckBox(this)),
+    cropCheckBox(new QCheckBox(this)),
+    littleCheckBox(new QCheckBox(this)),
+    // HDMI模式控件初始化
+    htotalLineEdit(new QLineEdit(this)),
+    hactiveLineEdit(new QLineEdit(this)),
+    vtotalLineEdit(new QLineEdit(this)),
+    vactiveLineEdit(new QLineEdit(this)),
+    hdmiColorSpaceEdit(new QLineEdit(this)), // 正确初始化QComboBox
+    hdmiColorDepthEdit(new QLineEdit(this)), // 正确初始化QComboBox
+    hdmi_frameInfoLabel(new QLabel(this)),
+    //hdmiSaveImageButton(new QPushButton("保存为BMP", this)),
+    hdmiWidget(new QWidget(this)),
+    filePathLineEdit(new QLineEdit(this)),
+    bpcComboBox(new QComboBox(this)),
+    bpcLabel(new QLabel("BPC:", this)),
+    frameCountLabel(new QLabel("总帧数:", this)),
+    fpsLineEdit(new QLineEdit(this)),
+    playButton(new QPushButton("播放", this)),
+    frameTimer(new QTimer(this)),
+    currentPlayingFrame(0),
+    hdmi_currentFrameIndex(0),
+    hdmi_prevFrameBtn(new QPushButton("<< 上一帧", this)),
+    hdmi_nextFrameBtn(new QPushButton("下一帧 >>", this))
 {
-    this->setWindowTitle("图像数据解析 Author by yaoyu.xu");
-    this->setWindowIcon(QIcon(":/res/logo.png"));
-    // 设置窗口初始大小
-    this->setFixedSize(600, 400);
+    // 基础窗口设置
+    setWindowTitle("图像数据解析 Author by yaoyu.xu");
+    setFixedSize(1350, 720);
 
-    // 设置 color space 选项
-    QStringList colorSpaceOptions = {"yuv422", "yuv444", "rgb", "rgba", "yuv420p(YV12)",
-                                     "yuv420p(YU12)", "yuv420sp(NV12)", "yuv420sp(NV21)"};
+    // 文件类型选择框
+    QStringList fileTypeOptions = {"二进制", "HDMI", "DSC"};
+    fileTypeComboBox->addItems(fileTypeOptions);
+
+    // 颜色空间选项
+    QStringList colorSpaceOptions = {
+        "yuv422", "yuv444", "rgb", "rgba",
+        "yuv420p(YV12)", "yuv420p(YU12)",
+        "yuv420sp(NV12)", "yuv420sp(NV21)", "yuv422sp", "dpss_yuv422sp", "y"
+    };
+
+    // bpc选项
+    QStringList bpcOptions = {"8", "10", "12"};
+    bpcComboBox->addItems(bpcOptions);
+    bpcComboBox->setVisible(false);
+    bpcLabel->setVisible(false);
+
+    // 图像数据模式布局
+    frameLineEdit = new QLineEdit(this);
+    frameLineEdit->setObjectName("frameLineEdit");
+    frameLineEdit->setValidator(new QIntValidator(1, 300, this)); // 设置帧数范围
+    frameLineEdit->setText("1");
+    frameSlider = new QSlider(Qt::Horizontal, this);
+    frameSlider->setObjectName("frameSlider");
+    // 初始化导航控件
+    frameLabel = new QLabel("当前帧: 0/0", this);
+    prevFrameButton = new QPushButton("<<", this);
+    nextFrameButton = new QPushButton(">>", this);
+    cropCheckBox->setChecked(false);
+    QHBoxLayout *imageLayout = new QHBoxLayout;
+    imageLayout->addWidget(new QLabel("分辨率:", this));
+    imageLayout->addWidget(widthLineEdit);
+    imageLayout->addWidget(heightLineEdit);
+    imageLayout->addWidget(padLineEdit);
+    imageLayout->addWidget(new QLabel("Color Space:", this));
     colorSpaceComboBox->addItems(colorSpaceOptions);
+    imageLayout->addWidget(colorSpaceComboBox);
+    imageLayout->addWidget(new QLabel("Color Depth:", this));
+    colorDepthComboBox->addItems({"8", "10"});
+    imageLayout->addWidget(colorDepthComboBox);
+    imageLayout->addWidget(new QLabel("swap:", this));
+    imageLayout->addWidget(reverseCheckBox);
+    imageLayout->addWidget(new QLabel("crop:", this));
+    imageLayout->addWidget(cropCheckBox);
+    imageLayout->addWidget(new QLabel("little:", this));
+    imageLayout->addWidget(littleCheckBox);
+    imageLayout->addWidget(frameCountLabel);
+    imageLayout->addWidget(frameLineEdit);
+    imageLayout->addWidget(frameSlider);
+    imageLayout->addWidget(frameLabel);
+    imageLayout->addWidget(prevFrameButton);
+    imageLayout->addWidget(nextFrameButton);
+    fpsLineEdit->setValidator(new QIntValidator(1, 60, this));
+    imageLayout->addWidget(new QLabel("帧率(fps):"));
+    fpsLineEdit->setText("25"); // 默认帧率
+    imageLayout->addWidget(fpsLineEdit);
+    imageLayout->addWidget(playButton);
+    imageLayout->addWidget(saveImageButton);
+    imageLayout->insertStretch(-1, 1); // 右侧弹性空间
 
-    // 设置 color depth 选项
-    QStringList colorDepthOptions = {"8", "10"};
-    colorDepthComboBox->addItems(colorDepthOptions);
+    originalSecondRowWidget = new QWidget(this);
+    originalSecondRowWidget->setLayout(imageLayout);
 
-    // 创建一个水平布局用于文件路径输入框、打开文件按钮
-    QHBoxLayout *horizontalLayout = new QHBoxLayout;
-    horizontalLayout->addWidget(filePathQlabel);
-    horizontalLayout->addWidget(filePathLineEdit);
-    horizontalLayout->addWidget(openFileButton);
-    horizontalLayout->addWidget(transferButton);
-    // 创建一个水平布局用于分辨率、颜色空间和颜色深度设置以及反转复选框
-    QHBoxLayout *horizontalLayout1 = new QHBoxLayout;
-    QLabel *resolutionLabel = new QLabel("分辨率:", this);
-    horizontalLayout1->addWidget(resolutionLabel);
-    horizontalLayout1->addWidget(widthLineEdit);
-    horizontalLayout1->addWidget(heightLineEdit);
+    // HDMI模式布局
+    QHBoxLayout *hdmiLayout = new QHBoxLayout;
+    tmdsclkLineEdit = new QLineEdit(this);
+    tmdsclkLineEdit->setText("0");
+    hdmiLayout->addWidget(new QLabel("htotal:", this));
+    hdmiLayout->addWidget(htotalLineEdit);
+    hdmiLayout->addWidget(new QLabel("hactive:", this));
+    hdmiLayout->addWidget(hactiveLineEdit);
+    hdmiLayout->addWidget(new QLabel("vtotal:", this));
+    hdmiLayout->addWidget(vtotalLineEdit);
+    hdmiLayout->addWidget(new QLabel("vactive:", this));
+    hdmiLayout->addWidget(vactiveLineEdit);
+    hdmiLayout->addWidget(new QLabel("Color Space:", this));
+    hdmiLayout->addWidget(hdmiColorSpaceEdit);
+    hdmiLayout->addWidget(new QLabel("Color Depth:", this));
+    hdmiLayout->addWidget(hdmiColorDepthEdit);
+    hdmiLayout->addWidget(new QLabel("tmdsclk", this));
+    hdmiLayout->addWidget(tmdsclkLineEdit);
+    hdmiLayout->addWidget(hdmi_frameInfoLabel);
+    hdmiLayout->addWidget(hdmi_prevFrameBtn);
+    hdmiLayout->addWidget(hdmi_nextFrameBtn);
+    hdmiLayout->insertStretch(-1, 1); // 右侧弹性空间
 
-    QLabel *colorSpaceLabel = new QLabel("Color Space:", this);
-    QLabel *colorDepthLabel = new QLabel("Color Depth:", this);
-    horizontalLayout1->addWidget(colorSpaceLabel);
-    horizontalLayout1->addWidget(colorSpaceComboBox);
-    horizontalLayout1->addWidget(colorDepthLabel);
-    horizontalLayout1->addWidget(colorDepthComboBox);
-    horizontalLayout1->addWidget(reverseCheckBox);
-    horizontalLayout1->addWidget(saveImageButton);  // 添加保存按钮
-    // 创建一个垂直布局用于包含两个水平布局、保存按钮和图像标签
-    QVBoxLayout *verticalLayout = new QVBoxLayout;
-    verticalLayout->addLayout(horizontalLayout); // 添加第一个水平布局
-    verticalLayout->addLayout(horizontalLayout1); // 添加第二个水平布局
-    verticalLayout->addWidget(imageLabel);       // 添加图像标签
+    hdmiWidget = new QWidget(this);
+    hdmiWidget->setLayout(hdmiLayout);
+    hdmiWidget->setVisible(false);
 
-    // 创建一个中心widget并设置垂直布局
+    // 主布局
+    QVBoxLayout *mainLayout = new QVBoxLayout;
+    mainLayout->setContentsMargins(12, 12, 12, 12); // 窗口边距
+    mainLayout->setSpacing(0); // 垂直间距
+
+    // 第一行布局
+    QHBoxLayout *firstRow = new QHBoxLayout;
+    firstRow->setSpacing(8);
+    firstRow->addWidget(fileTypeComboBox);
+    firstRow->addWidget(bpcLabel);
+    firstRow->addWidget(bpcComboBox);
+    firstRow->addWidget(new QLabel("文件路径:", this));
+    firstRow->addWidget(filePathLineEdit, 2); // 占用更多空间
+    firstRow->addWidget(openFileButton);
+    firstRow->addWidget(transferButton);
+    firstRow->addWidget(aboutButton);
+
+    mainLayout->addLayout(firstRow);
+    mainLayout->addSpacing(0); // 行间距
+    mainLayout->addWidget(originalSecondRowWidget);
+    mainLayout->addWidget(hdmiWidget);
+    mainLayout->addSpacing(0);
+    mainLayout->addWidget(imageLabel, 1); // 图像显示区域自动扩展
+
     QWidget *centralWidget = new QWidget(this);
-    centralWidget->setLayout(verticalLayout);
+    centralWidget->setLayout(mainLayout);
     setCentralWidget(centralWidget);
+
+    // 设置输入验证
+    QRegExpValidator *numValidator = new QRegExpValidator(QRegExp("^\\d+$"), this);
+    widthLineEdit->setValidator(numValidator);
+    heightLineEdit->setValidator(numValidator);
+    htotalLineEdit->setValidator(numValidator);
+    hactiveLineEdit->setValidator(numValidator);
+    vtotalLineEdit->setValidator(numValidator);
+    vactiveLineEdit->setValidator(numValidator);
 
     // 设置只允许数字的验证器
     QRegExp regExp("^\\d+$");
     QRegExpValidator *validator = new QRegExpValidator(regExp, this);
     widthLineEdit->setValidator(validator);
     heightLineEdit->setValidator(validator);
+    htotalLineEdit->setValidator(validator);
+    hactiveLineEdit->setValidator(validator);
+    vtotalLineEdit->setValidator(validator);
+    vactiveLineEdit->setValidator(validator);
 
     // 连接按钮的点击信号到槽函数
     connect(openFileButton, &QPushButton::clicked, this, &MainWindow::onOpenFileClicked);
     connect(transferButton, &QPushButton::clicked, this, &MainWindow::transfer);
     connect(saveImageButton, &QPushButton::clicked, this, &MainWindow::onSaveImageClicked);
+    //connect(hdmiSaveImageButton, &QPushButton::clicked, this, &MainWindow::onSaveImageClicked);
     connect(colorSpaceComboBox, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
             this, &MainWindow::onColorSpaceChanged);
+    connect(aboutButton, &QPushButton::clicked, this, &MainWindow::onAboutClicked);
+    connect(fileTypeComboBox, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onFileTypeChanged);
+    connect(frameTimer, &QTimer::timeout, this, &MainWindow::playNextFrame);
+    connect(playButton, &QPushButton::clicked, this, &MainWindow::togglePlay);
+
+    // 连接上一帧按钮
+    connect(hdmi_prevFrameBtn, &QPushButton::clicked, this, [this]() {
+        if (hdmi_currentFrameIndex > 0) {
+            hdmi_currentFrameIndex--;
+            hdmi_updateFrameDisplay(); // 传递当前帧索引
+        }
+    });
+
+    // 连接下一帧按钮
+    connect(hdmi_nextFrameBtn, &QPushButton::clicked, this, [this]() {
+        tmdsclk = tmdsclkLineEdit->text().toInt();
+        QString inputPath = filePathLineEdit->text().trimmed();
+        QFile inputFile(inputPath);
+        int frameCount;
+        if (tmdsclk == 0) {
+            frameCount = 1;
+        } else {
+            frameCount = inputFile.size() / tmdsclk;
+            if (frameCount == 0) {
+                QMessageBox::warning(this, "输入错误", "tmdsclk err!");
+                return;
+            }
+        }
+        if (hdmi_currentFrameIndex < frameCount - 1) {
+            hdmi_currentFrameIndex++;
+            hdmi_updateFrameDisplay(); // 传递当前帧索引
+        }
+    });
+}
+
+void MainWindow::transfer()
+{
+    int Mode =fileTypeComboBox->currentIndex();
+    // 获取输入路径并验证
+    if (Mode == 0) {
+        transfer_bin();
+    } else if (Mode == 1){
+        transfer_hdmi();
+    } else {
+        transfer_dsc();
+    }
+}
+
+void MainWindow::onFileTypeChanged(int index)
+{
+    if (index == 0) { // 图像数据二进制
+        originalSecondRowWidget->setVisible(true);
+        hdmiWidget->setVisible(false);
+        bpcLabel->setVisible(false);
+        bpcComboBox->setVisible(false);
+    } else if (index == 1) { // HDMI
+        originalSecondRowWidget->setVisible(false);
+        hdmiWidget->setVisible(true);
+        bpcLabel->setVisible(false);
+        bpcComboBox->setVisible(false);
+    } else if (index == 2) {
+        originalSecondRowWidget->setVisible(false);
+        hdmiWidget->setVisible(false);
+        bpcLabel->setVisible(true);
+        bpcComboBox->setVisible(true);
+    }
 }
 
 MainWindow::~MainWindow()
 {
 
-}
-
-inline uint8_t clip(int value) {
-    return static_cast<uint8_t>(std::min(std::max(value, 0), 255));
-}
-
-void reverse_data(QByteArray& fileData, int width, int height, float bytes_per_pixel) {
-    const int bytes_per_block = 8;
-    const int total_blocks = (width * height * bytes_per_pixel) / bytes_per_block;
-
-    if (fileData.size() % bytes_per_block != 0) {
-        throw std::runtime_error("Error: Data size is not a multiple of 8 bytes.");
-    }
-
-    for (int i = 0; i < total_blocks; ++i) {
-        for (int j = 0; j < bytes_per_block / 2; ++j) {
-            char temp = static_cast<char>(fileData[i * bytes_per_block + j] & 0xFF);
-            fileData[i * bytes_per_block + j] = static_cast<char>(fileData[i * bytes_per_block + (bytes_per_block - 1 - j)] & 0xFF);
-            fileData[i * bytes_per_block + (bytes_per_block - 1 - j)] = temp;
-        }
-    }
-}
-
-QByteArray convertRgb10ToRgb8(const QByteArray& inputData, int width, int height) {
-    QImage image(width, height, QImage::Format_RGB888);
-
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            int pixelIndex = (y * width + x) * 4;
-
-            uint8_t byte1 = static_cast<uint8_t>(inputData[pixelIndex]);
-            uint8_t byte2 = static_cast<uint8_t>(inputData[pixelIndex + 1]);
-            uint8_t byte3 = static_cast<uint8_t>(inputData[pixelIndex + 2]);
-            uint8_t byte4 = static_cast<uint8_t>(inputData[pixelIndex + 3]);
-            uint16_t r = ((byte1 << 4) | (byte2 >> 4)) >> 2;
-            uint16_t g = (((byte2 & 0x0F) << 6) | (byte3 >> 2)) >> 2;
-            uint16_t b = (((byte3 & 0x03) << 8) | byte4) >> 2;
-            uint8_t r8 = r & 0xff;
-            uint8_t g8 = g & 0xff;
-            uint8_t b8 = b & 0xff;
-
-            image.setPixel(x, y, qRgb(r8, g8, b8));
-        }
-    }
-
-    QByteArray outputData;
-    const uchar* bits = image.bits();
-    int bytesPerLine = image.bytesPerLine();
-
-    for (int y = 0; y < height; ++y) {
-        outputData.append(reinterpret_cast<const char*>(bits + y * bytesPerLine), bytesPerLine);
-    }
-
-    return outputData;
-}
-
-QByteArray convertyuv444_10_To_8(const QByteArray& inputData, int width, int height) {
-    QImage image(width, height, QImage::Format_RGB888);
-
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            int pixelIndex = (y * width + x) * 4;
-
-            uint8_t byte1 = static_cast<uint8_t>(inputData[pixelIndex]);
-            uint8_t byte2 = static_cast<uint8_t>(inputData[pixelIndex + 1]);
-            uint8_t byte3 = static_cast<uint8_t>(inputData[pixelIndex + 2]);
-            uint8_t byte4 = static_cast<uint8_t>(inputData[pixelIndex + 3]);
-            uint16_t Y = ((byte1 << 4) | (byte2 >> 4)) >> 2;
-            uint16_t U = (((byte2 & 0x0F) << 6) | (byte3 >> 2)) >> 2;
-            uint16_t V = (((byte3 & 0x03) << 8) | byte4) >> 2;
-            uint8_t y8 = Y & 0xff;
-            uint8_t u8 = U & 0xff;
-            uint8_t v8 = V & 0xff;
-
-            image.setPixel(x, y, qRgb(y8, u8, v8));
-        }
-    }
-
-    QByteArray outputData;
-    const uchar* bits = image.bits();
-    int bytesPerLine = image.bytesPerLine();
-
-    for (int y = 0; y < height; ++y) {
-        outputData.append(reinterpret_cast<const char*>(bits + y * bytesPerLine), bytesPerLine);
-    }
-
-    return outputData;
-}
-
-QByteArray convertyuv444_8_ToRgb(const QByteArray& inputData, int width, int height) {
-    QImage image(width, height, QImage::Format_RGB888);
-
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            int yuv_index = y * width * 3 + x * 3;
-
-            uint8_t Y = static_cast<uint8_t>(inputData[yuv_index + 0]);
-            uint8_t U = static_cast<uint8_t>(inputData[yuv_index + 1]);
-            uint8_t V = static_cast<uint8_t>(inputData[yuv_index + 2]);
-
-            int R = clip(1.164 * (Y - 16) + 1.793 * (V - 128));
-            int G = clip(1.164 * (Y - 16) - 0.534 * (V - 128) - 0.213 * (U - 128));
-            int B = clip(1.164 * (Y - 16) + 2.115 * (U - 128));
-
-            uint8_t r8 = clip(R);
-            uint8_t g8 = clip(G);
-            uint8_t b8 = clip(B);
-
-            image.setPixel(x, y, qRgb(r8, g8, b8));
-        }
-    }
-
-    QByteArray outputData;
-    const uchar* bits = image.bits();
-    int bytesPerLine = image.bytesPerLine();
-
-    for (int y = 0; y < height; ++y) {
-        outputData.append(reinterpret_cast<const char*>(bits + y * bytesPerLine), bytesPerLine);
-    }
-
-    return outputData;
-}
-
-QByteArray convertyuv422_8_To_444(const QByteArray& inputData, int width, int height) {
-    QByteArray outputData(width * height * 3, '\0');
-    uchar* outputPtr = reinterpret_cast<uchar*>(outputData.data());
-
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; x += 2) {
-            int yuv_index = y * width * 2 + x * 2;
-
-            uint8_t Y1_422 = inputData[yuv_index + 0];
-            uint8_t U = inputData[yuv_index + 1];
-            uint8_t Y2_422 = inputData[yuv_index + 2];
-            uint8_t V = inputData[yuv_index + 3];
-
-            *outputPtr++ = Y1_422;
-            *outputPtr++ = U;
-            *outputPtr++ = V;
-
-            *outputPtr++ = Y2_422;
-            *outputPtr++ = U;
-            *outputPtr++ = V;
-        }
-    }
-
-    return outputData;
-}
-
-QByteArray convertyuv422_10_To_444(const QByteArray& inputData, int width, int height) {
-    QByteArray outputData(width * height * 3, '\0');
-    uchar* outputPtr = reinterpret_cast<uchar*>(outputData.data());
-
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; x += 2) {
-            int yuv_index = y * width * 5 / 2 + x * 5 / 2;
-
-            uint8_t byte1 = inputData[yuv_index + 0];
-            uint8_t byte2 = inputData[yuv_index + 1];
-            uint8_t byte3 = inputData[yuv_index + 2];
-            uint8_t byte4 = inputData[yuv_index + 3];
-            uint8_t byte5 = inputData[yuv_index + 4];
-
-            uint16_t y1 = byte1;
-            uint16_t u = (((byte2 & 0x3f) << 4) | (byte3 >> 4)) >> 2;
-            uint16_t y2 = (((byte3 & 0x0f) << 6) | (byte4 >> 2)) >> 2;
-            uint16_t v = (((byte4 & 0x03) << 8) | byte5) >> 2;
-            *outputPtr++ = y1 & 0xff;
-            *outputPtr++ = u & 0xff;
-            *outputPtr++ = v & 0xff;
-
-            *outputPtr++ = y2 & 0xff;
-            *outputPtr++ = u & 0xff;
-            *outputPtr++ = v & 0xff;
-        }
-    }
-
-    return outputData;
-}
-
-QByteArray convert_yu12_8_To_rgb(const QByteArray& inputData, int width, int height) {
-    QByteArray outputData(width * height * 3, '\0');
-    uchar* rgbData = reinterpret_cast<uchar*>(outputData.data());
-
-    size_t rgbIndex = 0;
-    for (int i = 0; i < height; ++i) {
-        for (int j = 0; j < width; ++j) {
-            int index_y = i * width + j;
-            int index_u = width * height + (i / 2) * (width / 2) + (j / 2);
-            int index_v = index_u + (width * height / 4);
-            unsigned char y = inputData[index_y];
-            unsigned char u = inputData[index_u];
-            unsigned char v = inputData[index_v];
-
-            int r = static_cast<int>(y + 1.402 * (v - 128));
-            int g = static_cast<int>(y - 0.344136 * (u - 128) - 0.714136 * (v - 128));
-            int b = static_cast<int>(y + 1.772 * (u - 128));
-
-            r = clip(r);
-            g = clip(g);
-            b = clip(b);
-
-            rgbData[rgbIndex++] = static_cast<unsigned char>(r);
-            rgbData[rgbIndex++] = static_cast<unsigned char>(g);
-            rgbData[rgbIndex++] = static_cast<unsigned char>(b);
-       }
-    }
-
-    return outputData;
-}
-
-QByteArray convert_yv12_8_To_rgb(const QByteArray& inputData, int width, int height) {
-    QByteArray outputData(width * height * 3, '\0');
-    uchar* rgbData = reinterpret_cast<uchar*>(outputData.data());
-
-    size_t rgbIndex = 0;
-    for (int i = 0; i < height; ++i) {
-        for (int j = 0; j < width; ++j) {
-            int index_y = i * width + j;
-            int index_v = width * height + (i / 2) * (width / 2) + (j / 2);
-            int index_u = index_v + (width * height / 4);
-            unsigned char y = inputData[index_y];
-            unsigned char u = inputData[index_u];
-            unsigned char v = inputData[index_v];
-
-            int r = static_cast<int>(y + 1.402 * (v - 128));
-            int g = static_cast<int>(y - 0.344136 * (u - 128) - 0.714136 * (v - 128));
-            int b = static_cast<int>(y + 1.772 * (u - 128));
-
-            r = clip(r);
-            g = clip(g);
-            b = clip(b);
-
-            rgbData[rgbIndex++] = static_cast<unsigned char>(r);
-            rgbData[rgbIndex++] = static_cast<unsigned char>(g);
-            rgbData[rgbIndex++] = static_cast<unsigned char>(b);
-       }
-    }
-
-    return outputData;
-}
-
-QByteArray convert_nv21_8_To_rgb(const QByteArray& inputData, int width, int height) {
-    QByteArray outputData(width * height * 3, '\0');
-    uchar* rgbData = reinterpret_cast<uchar*>(outputData.data());
-
-    size_t rgbIndex = 0;
-    for (int i = 0; i < height; ++i) {
-        for (int j = 0; j < width; ++j) {
-            int index_y = i * width + j;
-            int index_v = width * height + (i / 2) * width + (j / 2) * 2;
-            int index_u = width * height + (i / 2) * width + (j / 2) * 2 + 1;
-            unsigned char y = inputData[index_y];
-            unsigned char u = inputData[index_u];
-            unsigned char v = inputData[index_v];
-
-            int r = static_cast<int>(y + 1.402 * (v - 128));
-            int g = static_cast<int>(y - 0.344136 * (u - 128) - 0.714136 * (v - 128));
-            int b = static_cast<int>(y + 1.772 * (u - 128));
-
-            r = clip(r);
-            g = clip(g);
-            b = clip(b);
-
-            rgbData[rgbIndex++] = static_cast<unsigned char>(r);
-            rgbData[rgbIndex++] = static_cast<unsigned char>(g);
-            rgbData[rgbIndex++] = static_cast<unsigned char>(b);
-       }
-    }
-
-    return outputData;
-}
-
-QByteArray convert_nv12_8_To_rgb(const QByteArray& inputData, int width, int height) {
-    QByteArray outputData(width * height * 3, '\0');
-    uchar* rgbData = reinterpret_cast<uchar*>(outputData.data());
-
-    size_t rgbIndex = 0;
-    for (int i = 0; i < height; ++i) {
-        for (int j = 0; j < width; ++j) {
-            int index_y = i * width + j;
-            int index_u = width * height + (i / 2) * width + (j / 2) * 2;
-            int index_v = width * height + (i / 2) * width + (j / 2) * 2 + 1;
-            unsigned char y = inputData[index_y];
-            unsigned char u = inputData[index_u];
-            unsigned char v = inputData[index_v];
-
-            int r = static_cast<int>(y + 1.402 * (v - 128));
-            int g = static_cast<int>(y - 0.344136 * (u - 128) - 0.714136 * (v - 128));
-            int b = static_cast<int>(y + 1.772 * (u - 128));
-
-            r = clip(r);
-            g = clip(g);
-            b = clip(b);
-
-            rgbData[rgbIndex++] = static_cast<unsigned char>(r);
-            rgbData[rgbIndex++] = static_cast<unsigned char>(g);
-            rgbData[rgbIndex++] = static_cast<unsigned char>(b);
-       }
-    }
-
-    return outputData;
-}
-
-QByteArray convert_nv_10_To_8(const QByteArray& inputData) {
-    if (inputData.size() % 5 != 0) {
-        std::cerr << "输入数据大小不是5的倍数！" << std::endl;
-        return QByteArray();
-    }
-
-    std::vector<unsigned char> outputData;
-    outputData.reserve(inputData.size() * 4 / 5);
-
-    for (int i = 0; i < inputData.size(); i += 5) {
-        unsigned char byte1 = inputData[i];
-        unsigned char byte2 = inputData[i + 1];
-        unsigned char byte3 = inputData[i + 2];
-        unsigned char byte4 = inputData[i + 3];
-        unsigned char byte5 = inputData[i + 4];
-
-        uint16_t y1 = byte1;
-        uint16_t y2 = (((byte2 & 0x3f) << 4) | (byte3 >> 4)) >> 2;
-        uint16_t y3 = (((byte3 & 0x0f) << 6) | (byte4 >> 2)) >> 2;
-        uint16_t y4 = (((byte4 & 0x03) << 8) | byte5) >> 2;
-
-        unsigned char outputByte1 = y1 & 0xFF;
-        unsigned char outputByte2 = y2 & 0xFF;
-        unsigned char outputByte3 = y3 & 0xFF;
-        unsigned char outputByte4 = y4 & 0xFF;
-        outputData.push_back(outputByte1);
-        outputData.push_back(outputByte2);
-        outputData.push_back(outputByte3);
-        outputData.push_back(outputByte4);
-    }
-
-    QByteArray outputArray(reinterpret_cast<const char*>(outputData.data()), outputData.size());
-    return outputArray;
-}
-
-void MainWindow::onOpenFileClicked()
-{
-    fileName = QFileDialog::getOpenFileName(this, "Open File", "", "All Files (*)");
-    if (fileName.isEmpty())
-        return;
-    filePathLineEdit->setText(fileName);
-}
-
-void MainWindow::displayScaledImage(const QImage image)
-{
-    QSize labelSize = imageLabel->size();
-    QImage scaledImage = image.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    imageLabel->setPixmap(QPixmap::fromImage(scaledImage));
-    imageLabel->setAlignment(Qt::AlignCenter);
-}
-
-void MainWindow::transfer()
-{
-    bool widthOk, heightOk;
-    int width = widthLineEdit->text().toInt(&widthOk);
-    int height = heightLineEdit->text().toInt(&heightOk);
-    if (!widthOk || !heightOk) {
-        QMessageBox::warning(this, "Invalid Input", "Please enter valid resolution values.");
-        return;
-    }
-
-    QString colorspace = colorSpaceComboBox->currentText();
-    QString colorDepthStr = colorDepthComboBox->currentText();
-    int colordepth = colorDepthStr.toInt();
-    float bytes_per_pixel = 0;
-    int reverse = reverseCheckBox->isChecked();
-
-    QFile file(fileName);
-    if (!file.open(QIODevice::ReadOnly)) {
-        QMessageBox::warning(this, "Error", "Cannot open file: " + file.errorString());
-        return;
-    }
-
-    QByteArray fileData = file.readAll();
-    file.close();
-
-    if (colorspace == "rgb") {
-        if (colordepth == 8) {
-            bytes_per_pixel = 3;
-            if (width * height * bytes_per_pixel > fileData.size()) {
-                QMessageBox::warning(this, "Warning", "No enough data.");
-                return;
-            }
-            if (reverse)
-                reverse_data(fileData, width, height, bytes_per_pixel);
-            originalImage = QImage(reinterpret_cast<const uchar*>(fileData.constData()), width, height, QImage::Format_RGB888).copy();
-        } else if (colordepth == 10) {
-            bytes_per_pixel = 4;
-            if (width * height * bytes_per_pixel > fileData.size()) {
-                QMessageBox::warning(this, "Warning", "No enough data.");
-                return;
-            }
-            if (reverse)
-               reverse_data(fileData, width, height, bytes_per_pixel);
-            fileData = convertRgb10ToRgb8(fileData, width, height);
-            originalImage = QImage(reinterpret_cast<const uchar*>(fileData.constData()), width, height, QImage::Format_RGB888).copy();
-        }
-    } else if(colorspace == "rgba") {
-        bytes_per_pixel = 4;
-        if (width * height * bytes_per_pixel > fileData.size()) {
-            QMessageBox::warning(this, "Warning", "No enough data.");
-            return;
-        }
-        if (reverse)
-           reverse_data(fileData, width, height, bytes_per_pixel);
-        originalImage = QImage(reinterpret_cast<const uchar*>(fileData.constData()), width, height, QImage::Format_ARGB32).copy();
-    } else if (colorspace == "yuv444") {
-        if (colordepth == 8) {
-            bytes_per_pixel = 3;
-            if (width * height * bytes_per_pixel > fileData.size()) {
-                QMessageBox::warning(this, "Warning", "No enough data.");
-                return;
-            }
-            if (reverse)
-                reverse_data(fileData, width, height, bytes_per_pixel);
-            fileData = convertyuv444_8_ToRgb(fileData, width, height);
-            originalImage = QImage(reinterpret_cast<const uchar*>(fileData.constData()), width, height, QImage::Format_RGB888).copy();
-        } else if (colordepth == 10) {
-            bytes_per_pixel = 4;
-            if (width * height * bytes_per_pixel > fileData.size()) {
-                QMessageBox::warning(this, "Warning", "No enough data.");
-                return;
-            }
-            if (reverse)
-                reverse_data(fileData, width, height, bytes_per_pixel);
-            fileData = convertyuv444_10_To_8(fileData, width, height);
-            fileData = convertyuv444_8_ToRgb(fileData, width, height);
-            originalImage = QImage(reinterpret_cast<const uchar*>(fileData.constData()), width, height, QImage::Format_RGB888).copy();
-        }
-    } else if (colorspace == "yuv422") {
-        if (colordepth == 8) {
-            bytes_per_pixel = 2;
-            if (width * height * bytes_per_pixel > fileData.size()) {
-                QMessageBox::warning(this, "Warning", "No enough data.");
-                return;
-            }
-            if (reverse)
-                reverse_data(fileData, width, height, bytes_per_pixel);
-            fileData = convertyuv422_8_To_444(fileData, width, height);
-            fileData = convertyuv444_8_ToRgb(fileData, width, height);
-            originalImage = QImage(reinterpret_cast<const uchar*>(fileData.constData()), width, height, QImage::Format_RGB888).copy();
-        } else if (colordepth == 10) {
-            bytes_per_pixel = 2.5;
-            if (width * height * bytes_per_pixel > fileData.size()) {
-                QMessageBox::warning(this, "Warning", "No enough data.");
-                return;
-            }
-            if (reverse)
-                reverse_data(fileData, width, height, bytes_per_pixel);
-            fileData = convertyuv422_10_To_444(fileData, width, height);
-            fileData = convertyuv444_8_ToRgb(fileData, width, height);
-            originalImage = QImage(reinterpret_cast<const uchar*>(fileData.constData()), width, height, QImage::Format_RGB888).copy();
-        }
-    } else if (colorspace == "yuv420p(YU12)") {
-        bytes_per_pixel = 1.5;
-        if (width * height * bytes_per_pixel > fileData.size()) {
-            QMessageBox::warning(this, "Warning", "No enough data.");
-            return;
-        }
-        if (reverse)
-            reverse_data(fileData, width, height, bytes_per_pixel);
-        fileData = convert_yu12_8_To_rgb(fileData, width, height);
-        originalImage = QImage(reinterpret_cast<const uchar*>(fileData.constData()), width, height, QImage::Format_RGB888).copy();
-    } else if (colorspace == "yuv420p(YV12)") {
-        bytes_per_pixel = 1.5;
-        if (width * height * bytes_per_pixel > fileData.size()) {
-            QMessageBox::warning(this, "Warning", "No enough data.");
-            return;
-        }
-        if (reverse)
-            reverse_data(fileData, width, height, bytes_per_pixel);
-        fileData = convert_yv12_8_To_rgb(fileData, width, height);
-        originalImage = QImage(reinterpret_cast<const uchar*>(fileData.constData()), width, height, QImage::Format_RGB888).copy();
-    } else if (colorspace == "yuv420sp(NV21)") {
-        if (colordepth == 8) {
-            bytes_per_pixel = 1.5;
-            if (width * height * bytes_per_pixel > fileData.size()) {
-                QMessageBox::warning(this, "Warning", "No enough data.");
-                return;
-            }
-            if (reverse)
-                reverse_data(fileData, width, height, bytes_per_pixel);
-            fileData = convert_nv21_8_To_rgb(fileData, width, height);
-            originalImage = QImage(reinterpret_cast<const uchar*>(fileData.constData()), width, height, QImage::Format_RGB888).copy();
-        } else if (colordepth == 10) {
-            bytes_per_pixel = 1.875;
-            if (width * height * bytes_per_pixel > fileData.size()) {
-                QMessageBox::warning(this, "Warning", "No enough data.");
-                return;
-            }
-            if (reverse)
-                reverse_data(fileData, width, height, bytes_per_pixel);
-            fileData = convert_nv_10_To_8(fileData);
-            fileData = convert_nv12_8_To_rgb(fileData, width, height);
-            originalImage = QImage(reinterpret_cast<const uchar*>(fileData.constData()), width, height, QImage::Format_RGB888).copy();
-        }
-    } else if (colorspace == "yuv420sp(NV12)") {
-        if (colordepth == 8) {
-            bytes_per_pixel = 1.5;
-            if (width * height * bytes_per_pixel > fileData.size()) {
-                QMessageBox::warning(this, "Warning", "No enough data.");
-                return;
-            }
-            if (reverse)
-                reverse_data(fileData, width, height, bytes_per_pixel);
-            fileData = convert_nv12_8_To_rgb(fileData, width, height);
-            originalImage = QImage(reinterpret_cast<const uchar*>(fileData.constData()), width, height, QImage::Format_RGB888).copy();
-        } else if (colordepth == 10) {
-            bytes_per_pixel = 1.875;
-            if (width * height * bytes_per_pixel > fileData.size()) {
-                QMessageBox::warning(this, "Warning", "No enough data.");
-                return;
-            }
-            if (reverse)
-                reverse_data(fileData, width, height, bytes_per_pixel);
-            fileData = convert_nv_10_To_8(fileData);
-            fileData = convert_nv21_8_To_rgb(fileData, width, height);
-            originalImage = QImage(reinterpret_cast<const uchar*>(fileData.constData()), width, height, QImage::Format_RGB888).copy();
-        }
-    }
-    displayScaledImage(originalImage);
-}
-
-void MainWindow::onSaveImageClicked()
-{
-    if (originalImage.isNull()) {
-        QMessageBox::warning(this, "Warning", "No image to save.");
-        return;
-    }
-
-    QString fileName = QFileDialog::getSaveFileName(this, "Save Image as BMP", "", "Bitmap Files (*.bmp)");
-    if (!fileName.isEmpty()) {
-        if (!originalImage.save(fileName, "bmp")) {
-            QMessageBox::warning(this, "Error", "Failed to save image.");
-        }
-    }
-}
-
-void MainWindow::onColorSpaceChanged() {
-    QString selectedColorSpace = colorSpaceComboBox->currentText();
-    if (selectedColorSpace == "rgba" ||
-        selectedColorSpace == "yuv420p(YV12)" ||
-        selectedColorSpace == "yuv420p(YU12)") {
-        colorDepthComboBox->clear();
-        colorDepthComboBox->addItem("8");
-    } else {
-        colorDepthComboBox->clear();
-        QStringList colorDepthOptions = {"8", "10"};
-        colorDepthComboBox->addItems(colorDepthOptions);
-        colorDepthComboBox->setEnabled(true);
-    }
 }

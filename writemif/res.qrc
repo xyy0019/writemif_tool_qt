@@ -1,5 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file>res/logo.png</file>
+        <file>res/OIP-C.jfif</file>
+        <file>res/1.png</file>
     </qresource>
 </RCC>
